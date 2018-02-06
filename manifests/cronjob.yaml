@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-backup
+  namespace: kube-system
+
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: kube-backup-s3
+  namespace: kube-system
+data:
+  S3_ACCESS_KEY: <base64 s3 access key>
+  S3_SECRET_KEY: <base64 s3 secret key>
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-backup
+  namespace: kube-system
+data:
+  S3_ALIAS: backup-minio
+  S3_BUCKET: backup
+  S3_ENDPOINT: http://backup.s3.tld:9001/
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-backup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: kube-backup
+  namespace: kube-system
+
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: kube-backup
+  namespace: kube-system
+spec:
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  schedule: "33 */6 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: kube-backup
+          containers:
+          - name: kube-backup
+            image: roffe/kube-backup:latest
+            envFrom:
+            - configMapRef:
+                name: kube-backup
+            env:
+              - name: S3_ACCESS_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: kube-backup-s3
+                    key: S3_ACCESS_KEY
+              - name: S3_SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: kube-backup-s3
+                    key: S3_SECRET_KEY
+         
